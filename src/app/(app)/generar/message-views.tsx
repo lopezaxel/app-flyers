@@ -5,6 +5,7 @@ import { angleLabel } from "@/lib/angle-label";
 import type { ChatFlyer, CoverageNote, ProposalContent, ResultContent, UserContent } from "@/lib/chat-types";
 import type { Assessment, Concept } from "@/lib/gemini/director";
 import { IMAGE_MODELS, estimateImagesCostUsd, type ImageSize, type ImageTier } from "@/lib/gemini/models";
+import { ImageLightbox } from "../image-lightbox";
 
 function Avatar() {
   return (
@@ -25,16 +26,28 @@ function AssistantRow({ children }: { children: ReactNode }) {
 
 export function UserBubble({ content }: { content: UserContent }) {
   const urls = content.previewUrls ?? content.attachmentIds.map((id) => `/api/img/inspiration/${id}`);
+  const styleUrls =
+    content.stylePreviewUrls ?? [
+      ...(content.styleIds ?? []).map((id) => `/api/img/inspiration/${id}`),
+      ...(content.styleFlyerIds ?? []).map((id) => `/api/img/flyer/${id}`),
+    ];
   const s = content.settings;
   return (
     <div className="flex flex-col items-end gap-1.5">
       <div className="flex max-w-[85%] flex-col gap-2 rounded-2xl rounded-br-md border border-white/12 bg-white/10 px-4 py-3">
-        {urls.length > 0 && (
+        {(urls.length > 0 || styleUrls.length > 0) && (
           <ul className="flex flex-wrap gap-2">
             {urls.map((u) => (
               <li key={u}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={u} alt="Captura de inspiración" className="h-24 w-auto rounded-lg border border-white/15 object-cover" />
+              </li>
+            ))}
+            {styleUrls.map((u) => (
+              <li key={u} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u} alt="Flyer de estilo" className="h-24 w-auto rounded-lg border border-white/40 object-cover" />
+                <span className="absolute bottom-1 left-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10px] text-white/90">Estilo</span>
               </li>
             ))}
           </ul>
@@ -380,10 +393,11 @@ export function ResultView({
         {items.map((f) => (
           <figure key={f.id} className="glass flex flex-col gap-2 p-3">
             {f.status === "done" ? (
-              <a href={`/api/img/flyer/${f.id}`} target="_blank" rel="noreferrer">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/api/img/flyer/${f.id}`} alt={f.headline || f.name} className="w-full rounded-xl object-contain" />
-              </a>
+              <ImageLightbox
+                src={`/api/img/flyer/${f.id}`}
+                alt={f.headline || f.name}
+                downloadHref={`/api/img/flyer/${f.id}?download=1`}
+              />
             ) : (
               <div
                 className="flex w-full items-center justify-center rounded-xl bg-white/5 text-sm text-white/50"

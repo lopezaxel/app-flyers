@@ -1,5 +1,9 @@
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export const MAX_ATTACHMENTS = 3;
+/** Flyers de estilo por mensaje (subidos + elegidos de los ya generados). */
+export const MAX_STYLE = 2;
+/** Techo del envío completo: Vercel corta los requests en 4,5 MB. */
+export const MAX_TOTAL_BYTES = 3.8 * 1024 * 1024;
 const MAX_SIDE = 1600;
 
 /** Achica las capturas (las de pantallas retina pesan varios MB y el límite de envío es 4 MB en total). */

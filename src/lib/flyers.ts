@@ -25,6 +25,7 @@ const TEXT_CALL_ESTIMATE_USD = 0.03;
 const MAX_RECENT_FLYERS = 4;
 const DIRECTOR_VIEW_SIDE = 1024;
 const BASE_VIEW_SIDE = 1536;
+const STYLE_VIEW_SIDE = 1280;
 
 type Asset = { kind: string; name: string; url: string; usage_note: string };
 
@@ -55,20 +56,52 @@ async function loadAssets() {
   return rows;
 }
 
-async function loadInspirationRefs(ids: string[]): Promise<RefImage[]> {
+type InspirationRole = "inspiration" | "style";
+
+async function loadInspirationRefs(ids: string[], role: InspirationRole = "inspiration"): Promise<RefImage[]> {
   if (ids.length === 0) return [];
   const { rows } = await query<{ url: string }>(
-    "select url from app_flyers.inspiration where id = any($1::uuid[]) order by created_at",
-    [ids],
+    "select url from app_flyers.inspiration where id = any($1::uuid[]) and role = $2 order by created_at",
+    [ids, role],
   );
   return Promise.all(
     rows.map(async (r) => {
       const bytes = await readImageBytes(r.url);
       const type = bytes && sniffImage(bytes);
-      if (!bytes || !type) throw new Error("No se pudo leer una de las capturas de inspiración.");
+      if (!bytes || !type) throw new Error("No se pudo leer una de las imágenes de referencia.");
       return { mimeType: type.mime, bytes };
     }),
   );
+}
+
+/** Flyers modelo de estilo, en este orden: los subidos y después los ya generados (en el orden elegido). */
+async function loadStyleRefs(ids: string[], flyerIds: string[], maxSide: number): Promise<RefImage[]> {
+  const uploaded = await loadInspirationRefs(ids, "style");
+  if (flyerIds.length === 0) return uploaded;
+  const { rows } = await query<{ id: string; image_url: string }>(
+    "select id, image_url from app_flyers.flyers where id = any($1::uuid[]) and status = 'done' and image_url is not null",
+    [flyerIds],
+  );
+  const urls = new Map(rows.map((r) => [r.id, r.image_url]));
+  const picked = await Promise.all(
+    flyerIds.map(async (id) => {
+      const url = urls.get(id);
+      const ref = url ? await flyerImageRef(url, maxSide) : null;
+      if (!ref) throw new Error("Uno de los flyers de estilo ya no está disponible.");
+      return ref;
+    }),
+  );
+  return [...uploaded, ...picked];
+}
+
+/** ¿Todos esos flyers existen y ya están terminados? (para validar los modelos de estilo elegidos) */
+export async function flyersAreReady(ids: string[]) {
+  if (ids.length === 0) return true;
+  const { rows } = await query<{ n: number }>(
+    "select count(*)::int as n from app_flyers.flyers where id = any($1::uuid[]) and status = 'done' and image_url is not null",
+    [ids],
+  );
+  return rows[0].n === new Set(ids).size;
 }
 
 /** Imagen de un flyer ya generado, achicada para usarla de referencia. Null si todavía no existe. */
@@ -106,6 +139,7 @@ function buildImagePrompt(
   brand: Brand,
   assets: Asset[],
   inspirationCount: number,
+  styleCount: number,
   hasBase: boolean,
   context: { restrictionsEn: string; assetsEn: AssetNote[] },
 ) {
@@ -121,7 +155,11 @@ function buildImagePrompt(
       return `${i + 1}. ${kindLabel[a.kind] ?? a.kind}: ${a.name}${description ? ` — ${description}` : ""}`;
     }),
     ...Array.from({ length: inspirationCount }, (_, i) => `${assets.length + i + 1}. Style inspiration ${i + 1}`),
-    ...(hasBase ? [`${assets.length + inspirationCount + 1}. Previous version of this flyer (base design)`] : []),
+    ...Array.from(
+      { length: styleCount },
+      (_, i) => `${assets.length + inspirationCount + i + 1}. Style model flyer ${i + 1} (previous brand flyer whose look must be matched)`,
+    ),
+    ...(hasBase ? [`${assets.length + inspirationCount + styleCount + 1}. Previous version of this flyer (base design)`] : []),
   ];
 
   // Si refina un flyer anterior, el prompt abre con una orden de edición explícita: los modelos de imagen
@@ -143,6 +181,8 @@ function buildImagePrompt(
       "Use the logos exactly as provided, without redrawing or distorting them. The logos have transparent backgrounds (they may look black in the reference): place them over the design's own background, never copy any background rectangle, and choose the logo version that contrasts best with that background.",
     inspirationCount > 0 &&
       "The style-inspiration images are only a reference for composition and mood: do not copy their text, logos, people or recognizable elements. The result must be an original brand piece that respects the mandatory restrictions below, even if the inspiration breaks them.",
+    styleCount > 0 &&
+      "The style model flyers are previous flyers of this same brand. Match their visual language closely: layout and composition structure, typographic treatment (font style, weight, hierarchy and text placement), the style of illustrations, objects and renders, lighting, color grading, effects, spacing and level of detail. The result must look like it belongs to the same series, but it is a NEW flyer for the idea and text above: do not copy their text, specific content or people, and keep the brand logos exactly as provided.",
     hasBase &&
       "The last attached image is the previous version of this flyer. Keep its overall layout, composition and visual style, and apply ONLY the changes described above. Fix the problems the description addresses; do not carry over its mistakes.",
     // Cláusula fija: no depende de lo que haya escrito el director ni de lo que quede en las restricciones.
@@ -157,13 +197,13 @@ function buildImagePrompt(
 export type InspirationImage = { name: string; bytes: Uint8Array; type: ImageType };
 
 /** Guarda las capturas adjuntas en el Blob privado y en la tabla de inspiración. Devuelve sus ids. */
-export async function saveInspirations(images: InspirationImage[], title: string) {
+export async function saveInspirations(images: InspirationImage[], title: string, role: InspirationRole = "inspiration") {
   const ids: string[] = [];
   for (const img of images) {
-    const url = await saveImage("inspiration", img.name, img.bytes, img.type);
+    const url = await saveImage(role === "style" ? "style" : "inspiration", img.name, img.bytes, img.type);
     const { rows } = await query<{ id: string }>(
-      "insert into app_flyers.inspiration (url, title) values ($1, $2) returning id",
-      [url, title.slice(0, 120)],
+      "insert into app_flyers.inspiration (url, title, role) values ($1, $2, $3) returning id",
+      [url, title.slice(0, 120), role],
     );
     ids.push(rows[0].id);
   }
@@ -185,6 +225,9 @@ export async function proposeConcepts(input: {
   format: AspectRatio;
   count: number;
   images: InspirationImage[];
+  /** Modelos de estilo vigentes: subidos (tabla inspiration, rol "style") y flyers ya generados. */
+  styleInspirationIds: string[];
+  styleFlyerIds: string[];
   history: HistoryTurn[];
   /** Flyers del último resultado del chat, que el director puede mirar y refinar. */
   recentFlyerIds: string[];
@@ -192,7 +235,7 @@ export async function proposeConcepts(input: {
   coverage: string;
 }) {
   await assertWithinBudget(TEXT_CALL_ESTIMATE_USD);
-  const [brand, angleRes, assets, recent, allAngles] = await Promise.all([
+  const [brand, angleRes, assets, recent, allAngles, style] = await Promise.all([
     getBrand(),
     input.angleId
       ? query<{ name: string; instructions_md: string }>(
@@ -205,6 +248,7 @@ export async function proposeConcepts(input: {
     query<{ id: string; name: string; instructions_md: string }>(
       "select id, name, instructions_md from app_flyers.angles order by sort, created_at",
     ),
+    loadStyleRefs(input.styleInspirationIds, input.styleFlyerIds, DIRECTOR_VIEW_SIDE),
   ]);
   const angle = angleRes.rows[0] ?? null;
   if (input.angleId && !angle) throw new Error("El ángulo elegido ya no existe.");
@@ -222,6 +266,7 @@ export async function proposeConcepts(input: {
     topic: input.topic,
     format: input.format,
     images: refs,
+    style,
     count: input.count,
     assets,
     history: input.history,
@@ -270,13 +315,27 @@ async function insertFlyer(p: {
   model: string;
   size: ImageSize;
   prompt: string;
+  /** Capturas de inspiración y flyers de estilo subidos (se distinguen por el rol de cada fila). */
   inspirationIds: string[];
+  /** Flyers ya generados que se usaron como modelo de estilo. */
+  styleFlyerIds: string[];
 }) {
   const { rows } = await query<{ id: string }>(
     `insert into app_flyers.flyers
-       (series_id, angle_id, topic, copy, format, model, resolution, prompt, ref_inspiration_ids, status)
-     values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9::uuid[], 'pending') returning id`,
-    [p.seriesId, p.angleId, p.topic, JSON.stringify(p.concept), p.format, p.model, p.size, p.prompt, p.inspirationIds],
+       (series_id, angle_id, topic, copy, format, model, resolution, prompt, ref_inspiration_ids, ref_flyer_ids, status)
+     values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9::uuid[], $10::uuid[], 'pending') returning id`,
+    [
+      p.seriesId,
+      p.angleId,
+      p.topic,
+      JSON.stringify(p.concept),
+      p.format,
+      p.model,
+      p.size,
+      p.prompt,
+      p.inspirationIds,
+      p.styleFlyerIds,
+    ],
   );
   return rows[0].id;
 }
@@ -353,6 +412,8 @@ export type CreateVariationsInput = {
   size: ImageSize;
   concepts: Concept[];
   inspirationIds: string[];
+  styleInspirationIds?: string[];
+  styleFlyerIds?: string[];
   restrictionsEn: string;
   assetsEn: AssetNote[];
 };
@@ -364,10 +425,17 @@ export type CreateVariationsInput = {
  */
 export async function createVariations(input: CreateVariationsInput) {
   const { angleId, topic, format, tier, size, concepts, inspirationIds, restrictionsEn, assetsEn } = input;
+  const styleInspirationIds = input.styleInspirationIds ?? [];
+  const styleFlyerIds = input.styleFlyerIds ?? [];
   await assertWithinBudget(estimateImagesCostUsd(tier, size, concepts.length));
 
-  const [brand, assets, inspirationRefs] = await Promise.all([getBrand(), loadAssets(), loadInspirationRefs(inspirationIds)]);
-  const sharedRefs = [...(await loadAssetRefs(assets)), ...inspirationRefs];
+  const [brand, assets, inspirationRefs, styleRefs] = await Promise.all([
+    getBrand(),
+    loadAssets(),
+    loadInspirationRefs(inspirationIds),
+    loadStyleRefs(styleInspirationIds, styleFlyerIds, STYLE_VIEW_SIDE),
+  ]);
+  const sharedRefs = [...(await loadAssetRefs(assets)), ...inspirationRefs, ...styleRefs];
   const baseIds = [...new Set(concepts.map((c) => c.base_flyer_id).filter((id): id is string => Boolean(id)))];
   const bases = new Map(await Promise.all(baseIds.map(async (id) => [id, await loadBase(id)] as const)));
   const model = IMAGE_MODELS[tier].id;
@@ -381,9 +449,23 @@ export async function createVariations(input: CreateVariationsInput) {
     const prompt =
       isEdit && base
         ? buildEditPrompt(concept, base.copy)
-        : buildImagePrompt(concept, brand, assets, inspirationRefs.length, Boolean(base), { restrictionsEn, assetsEn });
+        : buildImagePrompt(concept, brand, assets, inspirationRefs.length, styleRefs.length, Boolean(base), {
+            restrictionsEn,
+            assetsEn,
+          });
     const refs = isEdit && base ? [base.ref] : base ? [...sharedRefs, base.ref] : sharedRefs;
-    const flyerId = await insertFlyer({ seriesId, angleId, topic, concept, format, model, size, prompt, inspirationIds });
+    const flyerId = await insertFlyer({
+      seriesId,
+      angleId,
+      topic,
+      concept,
+      format,
+      model,
+      size,
+      prompt,
+      inspirationIds: [...inspirationIds, ...styleInspirationIds],
+      styleFlyerIds,
+    });
     flyerIds.push(flyerId);
     await renderInto(flyerId, { tier, size, format, prompt, refs });
   };
@@ -408,20 +490,25 @@ export async function regenerateFlyer(input: { flyerId: string; tier: ImageTier;
     angle_id: string | null;
     topic: string;
     ref_inspiration_ids: string[];
-  }>("select copy, prompt, format, angle_id, topic, ref_inspiration_ids from app_flyers.flyers where id = $1", [flyerId]);
+    ref_flyer_ids: string[];
+  }>(
+    "select copy, prompt, format, angle_id, topic, ref_inspiration_ids, ref_flyer_ids from app_flyers.flyers where id = $1",
+    [flyerId],
+  );
   const original = rows[0];
   if (!original) throw new Error("No encuentro el flyer que querés regenerar.");
 
   await assertWithinBudget(estimateImagesCostUsd(tier, size, 1));
   const assets = await loadAssets();
-  const [assetRefs, inspirationRefs, base] = await Promise.all([
+  const [assetRefs, inspirationRefs, styleRefs, base] = await Promise.all([
     loadAssetRefs(assets),
     loadInspirationRefs(original.ref_inspiration_ids),
+    loadStyleRefs(original.ref_inspiration_ids, original.ref_flyer_ids, STYLE_VIEW_SIDE),
     loadBase(original.copy.base_flyer_id),
   ]);
   // Un flyer que nació de una edición se vuelve a editar desde su misma base, igual que la primera vez.
   const wasEdit = Boolean(base && original.copy.changes_en?.trim());
-  const refs = wasEdit && base ? [base.ref] : [...assetRefs, ...inspirationRefs, ...(base ? [base.ref] : [])];
+  const refs = wasEdit && base ? [base.ref] : [...assetRefs, ...inspirationRefs, ...styleRefs, ...(base ? [base.ref] : [])];
 
   const newId = await insertFlyer({
     seriesId: randomUUID(),
@@ -433,6 +520,7 @@ export async function regenerateFlyer(input: { flyerId: string; tier: ImageTier;
     size,
     prompt: original.prompt,
     inspirationIds: original.ref_inspiration_ids,
+    styleFlyerIds: original.ref_flyer_ids,
   });
   try {
     await renderInto(newId, { tier, size, format: original.format, prompt: original.prompt, refs });

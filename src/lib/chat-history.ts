@@ -10,9 +10,12 @@ export function buildHistory(messages: ChatMessage[]): HistoryTurn[] {
     const c = m.content;
     if (c.type === "user") {
       const files = c.attachmentIds.length;
+      const styles = (c.styleIds?.length ?? 0) + (c.styleFlyerIds?.length ?? 0);
       turns.push({
         role: "user",
-        text: `${c.text}${files > 0 ? ` [adjuntó ${files} ${files === 1 ? "captura" : "capturas"} de inspiración]` : ""}`,
+        text: `${c.text}${files > 0 ? ` [adjuntó ${files} ${files === 1 ? "captura" : "capturas"} de inspiración]` : ""}${
+          styles > 0 ? ` [eligió ${styles} ${styles === 1 ? "flyer" : "flyers"} como modelo de estilo]` : ""
+        }`,
       });
     } else if (c.type === "proposal") {
       const list = c.concepts
@@ -42,6 +45,20 @@ export function lastInspirationIds(messages: ChatMessage[]): string[] {
     if (c.type === "user" && c.attachmentIds.length > 0) return c.attachmentIds;
   }
   return [];
+}
+
+export type StyleRefs = { ids: string[]; flyerIds: string[] };
+
+/** Modelos de estilo vigentes en el chat: se heredan si el nuevo mensaje no elige otros. */
+export function lastStyle(messages: ChatMessage[]): StyleRefs {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const c = messages[i].content;
+    if (c.type === "proposal") return { ids: c.styleIds ?? [], flyerIds: c.styleFlyerIds ?? [] };
+    if (c.type === "user" && ((c.styleIds?.length ?? 0) > 0 || (c.styleFlyerIds?.length ?? 0) > 0)) {
+      return { ids: c.styleIds ?? [], flyerIds: c.styleFlyerIds ?? [] };
+    }
+  }
+  return { ids: [], flyerIds: [] };
 }
 
 /** Ids de los flyers del último resultado del chat (los que el director puede mirar). */

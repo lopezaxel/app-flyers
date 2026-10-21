@@ -6,12 +6,14 @@ import { z } from "zod";
 import { coverageNote, coverageText, getAngleStats } from "@/lib/angle-stats";
 import { requireUser } from "@/lib/auth";
 import { BudgetError } from "@/lib/budget";
-import { buildHistory, lastInspirationIds, lastResultFlyerIds } from "@/lib/chat-history";
+import { buildHistory, lastInspirationIds, lastResultFlyerIds, lastStyle } from "@/lib/chat-history";
 import type { ChatSettings } from "@/lib/chat-types";
 import { addMessage, createChat, deleteChat, getChat, getMessage, getMessages, setChatTitle } from "@/lib/chats";
 import { query } from "@/lib/db";
+import { MAX_STYLE } from "./image-utils";
 import {
   createVariations,
+  flyersAreReady,
   proposeConcepts,
   regenerateFlyer,
   saveInspirations,
@@ -27,6 +29,19 @@ const MAX_ATTACHMENTS = 3;
 const MAX_VARIATIONS = 4;
 
 export type ActionResult = { error?: string; chatId?: string };
+
+/** Lee y valida las imágenes adjuntas (tamaño y tipo real por los primeros bytes). */
+async function readImages(files: File[]): Promise<{ images: InspirationImage[] } | { error: string }> {
+  const images: InspirationImage[] = [];
+  for (const file of files) {
+    if (file.size > MAX_UPLOAD_BYTES) return { error: `${file.name} pesa más de 4 MB.` };
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const type = sniffImage(bytes);
+    if (!type) return { error: `${file.name} no es un PNG, JPEG o WebP válido.` };
+    images.push({ name: file.name, bytes, type });
+  }
+  return { images };
+}
 
 function failure(e: unknown) {
   return e instanceof BudgetError ? e.message : explainGeminiError(e);
@@ -52,14 +67,19 @@ export async function sendMessageAction(formData: FormData): Promise<ActionResul
 
   const files = formData.getAll("inspiration").filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length > MAX_ATTACHMENTS) return { error: `Podés adjuntar hasta ${MAX_ATTACHMENTS} capturas por mensaje.` };
-  const images: InspirationImage[] = [];
-  for (const file of files) {
-    if (file.size > MAX_UPLOAD_BYTES) return { error: `${file.name} pesa más de 4 MB.` };
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const type = sniffImage(bytes);
-    if (!type) return { error: `${file.name} no es un PNG, JPEG o WebP válido.` };
-    images.push({ name: file.name, bytes, type });
+  const styleFiles = formData.getAll("style_upload").filter((f): f is File => f instanceof File && f.size > 0);
+  const styleFlyers = z.array(z.string().uuid()).max(MAX_STYLE).safeParse(formData.getAll("style_flyer_id"));
+  if (!styleFlyers.success) return { error: "Revisá los flyers de estilo elegidos." };
+  if (styleFiles.length + styleFlyers.data.length > MAX_STYLE) {
+    return { error: `Podés elegir hasta ${MAX_STYLE} flyers de estilo por mensaje.` };
   }
+  if (!(await flyersAreReady(styleFlyers.data))) return { error: "Uno de los flyers de estilo ya no está disponible." };
+
+  const inspiration = await readImages(files);
+  if ("error" in inspiration) return { error: inspiration.error };
+  const style = await readImages(styleFiles);
+  if ("error" in style) return { error: style.error };
+  const images = inspiration.images;
 
   let chatId = parsed.data.chat_id;
   if (chatId && !(await getChat(chatId))) return { error: "Ese chat ya no existe." };
@@ -74,7 +94,20 @@ export async function sendMessageAction(formData: FormData): Promise<ActionResul
 
     const prior = await getMessages(chatId);
     const attachmentIds = await saveInspirations(images, text);
-    await addMessage(chatId, "user", { type: "user", text, attachmentIds, settings });
+    const newStyleIds = await saveInspirations(style.images, text, "style");
+    // Sin flyers de estilo nuevos se heredan los del chat, para que los ajustes sigan con el mismo modelo.
+    const hasNewStyle = newStyleIds.length + styleFlyers.data.length > 0;
+    const inherited = hasNewStyle ? null : lastStyle(prior);
+    const styleIds = inherited ? inherited.ids : newStyleIds;
+    const styleFlyerIds = inherited ? inherited.flyerIds : styleFlyers.data;
+    await addMessage(chatId, "user", {
+      type: "user",
+      text,
+      attachmentIds,
+      styleIds: newStyleIds,
+      styleFlyerIds: styleFlyers.data,
+      settings,
+    });
 
     try {
       const stats = await getAngleStats();
@@ -85,6 +118,8 @@ export async function sendMessageAction(formData: FormData): Promise<ActionResul
         format,
         count,
         images,
+        styleInspirationIds: styleIds,
+        styleFlyerIds,
         history: buildHistory(prior),
         recentFlyerIds: lastResultFlyerIds(prior),
       });
@@ -105,6 +140,8 @@ export async function sendMessageAction(formData: FormData): Promise<ActionResul
           assetsEn: result.assetsEn,
           // Sin capturas nuevas se heredan las del chat, para que los ajustes sigan con la misma referencia.
           inspirationIds: attachmentIds.length > 0 ? attachmentIds : lastInspirationIds(prior),
+          styleIds,
+          styleFlyerIds,
           angleId: effectiveAngleId,
           format,
           topic: text,
@@ -161,6 +198,8 @@ export async function generateAction(formData: FormData): Promise<ActionResult> 
       size,
       concepts,
       inspirationIds: p.inspirationIds,
+      styleInspirationIds: p.styleIds ?? [],
+      styleFlyerIds: p.styleFlyerIds ?? [],
       restrictionsEn: restrictions_en,
       assetsEn: p.assetsEn,
     });

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
+import { ImageLightbox } from "../image-lightbox";
 
 type Flyer = {
   id: string;
@@ -55,10 +56,11 @@ export default async function FlyersPage({
               className={`glass flex flex-col gap-3 p-4 ${serie && f.series_id === serie ? "ring-2 ring-white/60" : ""}`}
             >
               {f.image_url ? (
-                <a href={`/api/img/flyer/${f.id}`} target="_blank" rel="noreferrer">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/img/flyer/${f.id}`} alt={f.copy.headline ?? f.topic} className="w-full rounded-xl object-contain" />
-                </a>
+                <ImageLightbox
+                  src={`/api/img/flyer/${f.id}`}
+                  alt={f.copy.headline ?? f.topic}
+                  downloadHref={`/api/img/flyer/${f.id}?download=1`}
+                />
               ) : (
                 <div className="flex h-40 items-center justify-center rounded-xl bg-white/5 text-sm text-white/50">
                   {statusLabel[f.status]}

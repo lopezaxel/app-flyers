@@ -113,7 +113,7 @@ const responseJsonSchema = {
         summary: {
           type: "string",
           description:
-            "Lectura de las capturas de inspiración: composición, jerarquía, estilo, paleta, tipografía y clima. Vacío si no hay capturas nuevas o si el modo es chat.",
+            "Lectura de las capturas de inspiración y del estilo de los flyers modelo: composición, jerarquía, estilo, paleta, tipografía y clima. Vacío si no hay capturas nuevas ni flyers de estilo, o si el modo es chat.",
         },
         adaptations: {
           type: "string",
@@ -189,6 +189,8 @@ export type ProposeInput = {
   topic: string;
   format: string;
   images: RefImage[];
+  /** Flyers que el usuario eligió como modelo de estilo (subidos o ya generados). */
+  style: RefImage[];
   count: number;
   assets: { name: string; kind: string; usage_note: string }[];
   history: HistoryTurn[];
@@ -205,7 +207,7 @@ export type ProposeInput = {
  * variaciones con enfoques visuales distintos. Puede mirar las capturas nuevas y los flyers ya generados.
  */
 export async function proposeVariations(input: ProposeInput) {
-  const { brand, angle, topic, format, images, count, assets, history, recent, coverage, angleCatalog } = input;
+  const { brand, angle, topic, format, images, style, count, assets, history, recent, coverage, angleCatalog } = input;
   const palette = brand.palette.map((c) => `${c.hex} ${c.name}${c.use ? ` (${c.use})` : ""}`).join("; ");
 
   const system = [
@@ -250,7 +252,12 @@ export async function proposeVariations(input: ProposeInput) {
       : "0b. No hay flyers generados todavía: based_on va siempre en 0 y changes_en vacío.",
     images.length > 0
       ? "1. Analizá las capturas de inspiración nuevas (composición, jerarquía, estilo visual, paleta, tipografía, clima, recursos gráficos) y resumilo en analysis.summary. Son SOLO una referencia de estilo y composición: no copies sus textos, marcas, logos, personas ni elementos reconocibles; la pieza tiene que ser original y 100% de la marca."
-      : "1. No hay capturas nuevas: dejá analysis.summary y analysis.adaptations vacíos y analysis.tags vacío.",
+      : style.length > 0
+        ? "1. No hay capturas de inspiración nuevas: dejá analysis.adaptations y analysis.tags vacíos; analysis.summary lleva solo la lectura del estilo (ver 1b)."
+        : "1. No hay capturas nuevas: dejá analysis.summary y analysis.adaptations vacíos y analysis.tags vacío.",
+    style.length > 0
+      ? `1b. ESTILO A RESPETAR: arriba ves ${style.length} ${style.length === 1 ? "flyer de estilo" : "flyers de estilo"} ("Flyer de estilo 1"${style.length > 1 ? " a " + style.length : ""}). Son flyers anteriores que el usuario eligió como modelo de su estilo de edición. A diferencia de las capturas de inspiración, acá SÍ hay que sostener su lenguaje visual con fidelidad: composición y estructura, tratamiento y jerarquía tipográfica, tipo de objetos o ilustraciones (por ejemplo renders 3D, vidrio, degradados), iluminación, paleta, efectos y nivel de detalle. Describí ese lenguaje en el visual_prompt de cada variación, aplicado a la idea y al texto nuevos, sin copiar el contenido ni los textos de esos flyers. Resumí el estilo que detectaste al comienzo de analysis.summary, con el prefijo "Estilo: ". Las reglas duras de la marca siguen mandando sobre cualquier referencia.`
+      : "",
     "2. Si la referencia choca con las reglas duras o la paleta de la marca (por ejemplo usa neón, brillos, colores o símbolos prohibidos), mandan las reglas de la marca: tomá solo lo compatible y contá en analysis.adaptations qué ajustaste.",
     `3. Proponé exactamente ${count} ${count === 1 ? "variación" : "variaciones"} de la MISMA idea${count > 1 ? ", con enfoques visuales claramente distintos entre sí (otra composición, otro plano, otra metáfora o recurso visual). No quiero versiones casi iguales" : ""}.${images.length > 0 && count > 1 ? " Una de ellas tiene que ser la más fiel a la referencia, adaptada a la marca." : ""}`,
     "4. Cada variación lleva name, approach, headline, subheadline, cta, caption, visual_prompt y based_on. El titular y el texto pueden variar entre variaciones, pero todas respetan el ángulo, el estado del producto y las reglas duras. No inventes datos ni presión de venta que no figuren en la marca o en el estado del producto: nada de escasez o urgencia falsa (\"cupos limitados\", \"últimas plazas\", \"solo hoy\"), ni cifras, ni promesas.",
@@ -272,6 +279,10 @@ export async function proposeVariations(input: ProposeInput) {
     ...recent.flatMap((f, i) => [
       { text: `Flyer generado #${i + 1} (variación "${f.name}", titular "${f.headline}"):` },
       { inlineData: { mimeType: f.image.mimeType, data: Buffer.from(f.image.bytes).toString("base64") } },
+    ]),
+    ...style.flatMap((img, i) => [
+      { text: `Flyer de estilo ${i + 1} (modelo cuyo estilo hay que respetar):` },
+      { inlineData: { mimeType: img.mimeType, data: Buffer.from(img.bytes).toString("base64") } },
     ]),
     ...images.flatMap((img, i) => [
       { text: `Captura de inspiración nueva ${i + 1}:` },

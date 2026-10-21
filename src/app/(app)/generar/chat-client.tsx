@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { deleteChatAction, generateAction, regenerateAction, sendMessageAction } from "./actions";
-import { Composer, type ComposerSettings } from "./composer";
+import { Composer, type ComposerSettings, type StylePick } from "./composer";
 import { ErrorView, PendingBubble, ProposalView, ReplyView, ResultView, UserBubble } from "./message-views";
 import { Popover, pillClass } from "./popover";
 import { angleLabel } from "@/lib/angle-label";
-import type { AngleOption, ChatFlyer, ChatMessage, ChatSummary } from "@/lib/chat-types";
+import type { AngleOption, ChatFlyer, ChatMessage, ChatSummary, LibraryFlyer } from "@/lib/chat-types";
 import type { Concept } from "@/lib/gemini/director";
 import { estimateImagesCostUsd } from "@/lib/gemini/models";
 
@@ -27,10 +27,12 @@ type Props = {
   flyers: ChatFlyer[];
   chats: ChatSummary[];
   angles: AngleOption[];
+  /** Flyers ya generados que se pueden elegir como modelo de estilo. */
+  library: LibraryFlyer[];
   usage: { spentUsd: number; capUsd: number };
 };
 
-export function ChatClient({ chatId, title, messages, flyers, chats, angles, usage }: Props) {
+export function ChatClient({ chatId, title, messages, flyers, chats, angles, library, usage }: Props) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [settings, setSettings] = useState<ComposerSettings>({ angleId: "", format: "4:5", tier: "draft", size: "1K", count: 3 });
@@ -66,7 +68,7 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, usa
     return () => observer.disconnect();
   }, [empty]);
 
-  function send(files: File[], override?: { text: string; angleId: string }) {
+  function send(files: File[], override?: { text: string; angleId: string }, style: StylePick = { files: [], flyerIds: [] }) {
     const message = (override?.text ?? text).trim();
     const angleId = override?.angleId ?? settings.angleId;
     const form = new FormData();
@@ -78,8 +80,12 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, usa
     form.set("size", settings.size);
     form.set("count", String(settings.count));
     files.forEach((f) => form.append("inspiration", f));
+    style.files.forEach((f) => form.append("style_upload", f));
+    style.flyerIds.forEach((id) => form.append("style_flyer_id", id));
 
     const previewUrls = files.map((f) => URL.createObjectURL(f));
+    const styleObjectUrls = style.files.map((f) => URL.createObjectURL(f));
+    const stylePreviewUrls = [...styleObjectUrls, ...style.flyerIds.map((id) => `/api/img/flyer/${id}`)];
     const angleName = angles.find((a) => a.id === angleId)?.name ?? null;
     if (!override) setText("");
     setError(null);
@@ -94,6 +100,7 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, usa
           text: message,
           attachmentIds: [],
           previewUrls,
+          stylePreviewUrls,
           settings: { ...settings, angleId: angleId || null, angleName },
         },
       });
@@ -109,7 +116,7 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, usa
         if (!override) setText(message);
       } finally {
         setPendingLabel(null);
-        previewUrls.forEach((u) => URL.revokeObjectURL(u));
+        [...previewUrls, ...styleObjectUrls].forEach((u) => URL.revokeObjectURL(u));
       }
     });
   }
@@ -334,8 +341,9 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, usa
         settings={settings}
         onSettings={(patch) => setSettings((s) => ({ ...s, ...patch }))}
         angles={angles}
+        library={library}
         busy={busy}
-        onSend={send}
+        onSend={(files, style) => send(files, undefined, style)}
       />
     </div>
   );

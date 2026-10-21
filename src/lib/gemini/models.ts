@@ -53,7 +53,7 @@ export function textCostUsd(inputTokens: number, outputTokens: number) {
   );
 }
 
-/** Estimación previa a generar: supone ~4.000 tokens de entrada (prompt + imágenes de referencia). */
+/** Estimación previa a generar: supone ~9.000 tokens de entrada (prompt + logos y referencias; medido en producción el 2026-10-21). */
 export function estimateImagesCostUsd(tier: ImageTier, size: ImageSize, count: number) {
-  return imageCostUsd(tier, size, 4000) * count;
+  return imageCostUsd(tier, size, 9000) * count;
 }

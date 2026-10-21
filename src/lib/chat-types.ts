@@ -23,6 +23,9 @@ export type CoverageNote = {
   untouched: string[];
 };
 
+/** Flyer ya generado, para elegirlo como modelo de estilo. */
+export type LibraryFlyer = { id: string; label: string; format: AspectRatio };
+
 /** Lo que el usuario tenía elegido en los botones del chat al enviar. */
 export type ChatSettings = {
   angleId: string | null;
@@ -38,9 +41,14 @@ export type UserContent = {
   text: string;
   /** Capturas de inspiración adjuntas (ids de la tabla inspiration). */
   attachmentIds: string[];
+  /** Flyers propios subidos como modelo de estilo (ids de la tabla inspiration con rol "style"). */
+  styleIds?: string[];
+  /** Flyers ya generados que se eligieron como modelo de estilo. */
+  styleFlyerIds?: string[];
   settings: ChatSettings;
   /** Solo en el cliente: miniaturas locales mientras el mensaje todavía se está enviando. */
   previewUrls?: string[];
+  stylePreviewUrls?: string[];
 };
 
 export type ProposalContent = {
@@ -52,6 +60,9 @@ export type ProposalContent = {
   assetsEn: AssetNote[];
   /** Capturas que se usan como referencia de estilo al generar (las nuevas o las heredadas del chat). */
   inspirationIds: string[];
+  /** Modelos de estilo vigentes (los nuevos o los heredados del chat): subidos y ya generados. */
+  styleIds?: string[];
+  styleFlyerIds?: string[];
   angleId: string | null;
   format: AspectRatio;
   topic: string;

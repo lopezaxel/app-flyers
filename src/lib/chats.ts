@@ -1,5 +1,5 @@
 import { query } from "./db";
-import type { ChatContent, ChatFlyer, ChatMessage, ChatSummary } from "./chat-types";
+import type { ChatContent, ChatFlyer, ChatMessage, ChatSummary, LibraryFlyer } from "./chat-types";
 import type { AspectRatio } from "./gemini/models";
 
 type MessageRow = { id: string; role: "user" | "assistant"; content: ChatContent; created_at: Date };
@@ -55,6 +55,16 @@ export async function getMessage(chatId: string, messageId: string): Promise<Cha
   );
   const r = rows[0];
   return r ? { id: r.id, role: r.role, content: r.content, createdAt: r.created_at.toISOString() } : null;
+}
+
+/** Los últimos flyers terminados, para elegirlos como modelo de estilo. */
+export async function listLibraryFlyers(): Promise<LibraryFlyer[]> {
+  const { rows } = await query<{ id: string; copy: { headline?: string; name?: string }; format: AspectRatio }>(
+    `select id, copy, format from app_flyers.flyers
+     where status = 'done' and image_url is not null
+     order by created_at desc limit 24`,
+  );
+  return rows.map((r) => ({ id: r.id, label: r.copy.headline || r.copy.name || "Flyer", format: r.format }));
 }
 
 /** Datos de los flyers que aparecen en los resultados del chat. */
