@@ -6,6 +6,7 @@ type Brand = {
   body_md: string;
   rules_md: string;
   product_status_md: string;
+  product_knowledge_md: string;
   palette: { hex: string; name: string; use: string }[];
 };
 
@@ -16,7 +17,7 @@ export default async function MarcaPage({
 }) {
   const { saved } = await searchParams;
   const { rows } = await query<Brand>(
-    "select body_md, rules_md, product_status_md, palette from app_flyers.brand where id = 1",
+    "select body_md, rules_md, product_status_md, product_knowledge_md, palette from app_flyers.brand where id = 1",
   );
   const brand = rows[0];
   const paletteText = brand.palette.map((c) => `${c.hex} | ${c.name} | ${c.use}`).join("\n");
@@ -58,6 +59,13 @@ export default async function MarcaPage({
           hint="Qué se puede decir hoy y qué todavía no. Actualizalo cuando cambie algo."
           defaultValue={brand.product_status_md}
           rows={6}
+        />
+        <FileTextarea
+          name="product_knowledge_md"
+          label="Conocimiento del producto"
+          hint="Para quién es, qué hace cada pantalla y botón, qué se puede afirmar y qué no. La parte comercial es la base de los flyers; la técnica (stack, despliegue) está en su propia sección y solo sirve para tener criterio: nunca aparece en un flyer."
+          defaultValue={brand.product_knowledge_md}
+          rows={14}
         />
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Paleta</span>

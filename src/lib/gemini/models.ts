@@ -3,7 +3,18 @@
 
 export type ImageTier = "draft" | "final";
 export type ImageSize = "1K" | "2K" | "4K";
-export type AspectRatio = "1:1" | "4:5" | "9:16";
+export const ASPECT_RATIOS = ["1:1", "4:5", "9:16", "16:9", "4:3", "3:4"] as const;
+export type AspectRatio = (typeof ASPECT_RATIOS)[number];
+
+/** Nombre y uso de cada formato, para el selector del chat. */
+export const FORMAT_INFO: Record<AspectRatio, { label: string; hint: string }> = {
+  "1:1": { label: "Cuadrado", hint: "1:1 · Feed" },
+  "4:5": { label: "Vertical", hint: "4:5 · Feed de Instagram" },
+  "9:16": { label: "Historia", hint: "9:16 · Stories y Reels" },
+  "16:9": { label: "Horizontal", hint: "16:9 · Pantalla, YouTube" },
+  "4:3": { label: "Horizontal clásico", hint: "4:3 · Presentaciones" },
+  "3:4": { label: "Vertical clásico", hint: "3:4 · Afiche" },
+};
 
 export const IMAGE_MODELS: Record<
   ImageTier,

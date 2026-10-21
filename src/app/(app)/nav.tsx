@@ -6,6 +6,8 @@ import { logout } from "../login/actions";
 
 const links = [
   { href: "/", label: "Panel" },
+  { href: "/generar", label: "Generar" },
+  { href: "/flyers", label: "Flyers" },
   { href: "/marca", label: "Marca" },
   { href: "/angulos", label: "Ángulos" },
   { href: "/assets", label: "Assets" },

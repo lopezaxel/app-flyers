@@ -10,6 +10,7 @@ const schema = z.object({
   body_md: z.string().max(100_000),
   rules_md: z.string().max(50_000),
   product_status_md: z.string().max(50_000),
+  product_knowledge_md: z.string().max(60_000),
   palette: z.string().max(10_000),
 });
 
@@ -32,9 +33,9 @@ export async function saveBrand(formData: FormData) {
   const palette = await parsePalette(data.palette);
   await query(
     `update app_flyers.brand
-     set body_md = $1, rules_md = $2, product_status_md = $3, palette = $4::jsonb, updated_at = now()
+     set body_md = $1, rules_md = $2, product_status_md = $3, product_knowledge_md = $4, palette = $5::jsonb, updated_at = now()
      where id = 1`,
-    [data.body_md, data.rules_md, data.product_status_md, JSON.stringify(palette)],
+    [data.body_md, data.rules_md, data.product_status_md, data.product_knowledge_md, JSON.stringify(palette)],
   );
   revalidatePath("/marca");
   redirect("/marca?saved=1");

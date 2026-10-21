@@ -1,8 +1,8 @@
-import { del, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
-type ImageType = { mime: string; ext: string };
+export type ImageType = { mime: string; ext: string };
 
 /** Detecta el tipo real por los primeros bytes; el MIME que manda el navegador no es confiable. */
 export function sniffImage(bytes: Uint8Array): ImageType | null {
@@ -24,12 +24,27 @@ function assertConfigured() {
 export async function saveImage(folder: string, name: string, bytes: Uint8Array, type: ImageType) {
   assertConfigured();
   const safe = name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-_]+/gi, "-").slice(0, 60) || "imagen";
+  // El store es privado: la URL guardada no abre en el navegador, se lee con `readImage`.
   const blob = await put(`${folder}/${safe}.${type.ext}`, Buffer.from(bytes), {
-    access: "public",
+    access: "private",
     addRandomSuffix: true,
     contentType: type.mime,
   });
   return blob.url;
+}
+
+/** Lee una imagen del store privado. Devuelve null si ya no existe. */
+export async function readImage(url: string) {
+  assertConfigured();
+  const res = await get(url, { access: "private" });
+  if (!res || res.statusCode !== 200) return null;
+  return { stream: res.stream, contentType: res.blob.contentType };
+}
+
+export async function readImageBytes(url: string) {
+  const img = await readImage(url);
+  if (!img) return null;
+  return new Uint8Array(await new Response(img.stream).arrayBuffer());
 }
 
 export async function deleteImage(url: string) {

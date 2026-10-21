@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { MAX_UPLOAD_BYTES, deleteImage, saveImage, sniffImage } from "@/lib/storage";
+import { SVG_TYPE, looksLikeSvg, svgProblem } from "@/lib/svg";
 
 const kinds = ["logo", "app_screenshot", "other"] as const;
 
@@ -23,8 +24,13 @@ export async function uploadAssets(formData: FormData) {
   for (const file of files) {
     if (file.size > MAX_UPLOAD_BYTES) back(`${file.name} pesa más de 4 MB.`);
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const type = sniffImage(bytes);
-    if (!type) back(`${file.name} no es un PNG, JPEG o WebP válido.`);
+    let type = sniffImage(bytes);
+    if (!type && looksLikeSvg(bytes)) {
+      const problem = svgProblem(bytes);
+      if (problem) back(`${file.name}: ${problem}.`);
+      type = SVG_TYPE;
+    }
+    if (!type) back(`${file.name} no es un PNG, JPEG, WebP o SVG válido.`);
 
     let url: string;
     try {

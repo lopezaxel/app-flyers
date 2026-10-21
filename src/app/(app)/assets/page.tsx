@@ -24,8 +24,9 @@ export default async function AssetsPage({
       <div>
         <h1 className="text-xl font-semibold">Assets</h1>
         <p className="mt-1 text-sm text-white/60">
-          Logos y capturas de la app que siempre están disponibles como referencia. PNG, JPEG o WebP,
-          hasta 4 MB cada uno.
+          Logos y capturas de la app que siempre están disponibles como referencia. PNG, JPEG, WebP o
+          SVG, hasta 4 MB cada uno (1 MB los SVG). Los SVG se guardan como vector y se convierten a PNG
+          al generar, conservando la transparencia.
         </p>
       </div>
 
@@ -37,7 +38,7 @@ export default async function AssetsPage({
 
       <form action={uploadAssets} className="glass flex flex-col gap-4 p-6">
         <h2 className="font-medium">Subir</h2>
-        <input type="file" name="files" accept="image/png,image/jpeg,image/webp" multiple required className="text-sm" />
+        <input type="file" name="files" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" multiple required className="text-sm" />
         <div className="flex flex-col gap-3 sm:flex-row">
           <select name="kind" className="field sm:w-56" defaultValue="logo">
             <option value="logo">Logo</option>
@@ -63,7 +64,7 @@ export default async function AssetsPage({
                 className="flex h-40 items-center justify-center overflow-hidden rounded-xl bg-[repeating-conic-gradient(rgba(255,255,255,0.06)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.url} alt={a.name} className="max-h-full max-w-full object-contain" />
+                <img src={`/api/img/asset/${a.id}`} alt={a.name} className="max-h-full max-w-full object-contain" />
               </div>
               <div className="flex items-center justify-between text-xs text-white/60">
                 <span className="truncate">{a.name}</span>
