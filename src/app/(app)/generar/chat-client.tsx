@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
-import { deleteChatAction, generateAction, regenerateAction, sendMessageAction } from "./actions";
+import { deleteChatAction, generateAction, regenerateAction, sendMessageAction, upgradeAction } from "./actions";
 import { Composer, type ComposerSettings, type StylePick } from "./composer";
 import { ErrorView, PendingBubble, ProposalView, ReplyView, ResultView, UserBubble } from "./message-views";
 import { Popover, pillClass } from "./popover";
@@ -171,6 +171,26 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, lib
     });
   }
 
+  function upgrade(flyerId: string) {
+    if (!chatId) return;
+    const form = new FormData();
+    form.set("chat_id", chatId);
+    form.set("flyer_id", flyerId);
+    form.set("size", settings.size);
+    setError(null);
+    setPendingLabel("Subiendo el flyer a Pro…");
+    startTransition(async () => {
+      try {
+        const result = await upgradeAction(form);
+        if (result.error) setError(result.error);
+      } catch {
+        setError("No se pudo subir a Pro. Probá de nuevo.");
+      } finally {
+        setPendingLabel(null);
+      }
+    });
+  }
+
   /** "Pedir cambios" deja el cuadro listo para escribir el ajuste sobre ese flyer. */
   function askChanges(flyerName: string) {
     setText(`Sobre «${flyerName}»: `);
@@ -315,6 +335,8 @@ export function ChatClient({ chatId, title, messages, flyers, chats, angles, lib
                       busy={busy}
                       regenerateCost={estimateImagesCostUsd(settings.tier, settings.size, 1)}
                       onRegenerate={regenerate}
+                      upgradeCost={estimateImagesCostUsd("final", settings.size, 1)}
+                      onUpgrade={upgrade}
                       onAskChanges={askChanges}
                     />
                   );

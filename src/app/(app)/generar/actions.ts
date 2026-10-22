@@ -18,6 +18,7 @@ import {
   regenerateFlyer,
   saveInspirations,
   tagInspirations,
+  upgradeFlyer,
   type InspirationImage,
 } from "@/lib/flyers";
 import { explainGeminiError } from "@/lib/gemini/client";
@@ -238,6 +239,36 @@ export async function regenerateAction(formData: FormData): Promise<ActionResult
       await addMessage(chat_id, "assistant", { type: "error", text: result.error });
     } else {
       await addMessage(chat_id, "assistant", { type: "result", flyerIds: [result.flyerId], tier, size, errors: [] });
+    }
+  } catch (e) {
+    await addMessage(chat_id, "assistant", { type: "error", text: failure(e) });
+  }
+  revalidatePath("/generar");
+  revalidatePath("/flyers");
+  revalidatePath("/");
+  return { chatId: chat_id };
+}
+
+const upgradeSchema = z.object({
+  chat_id: z.string().uuid(),
+  flyer_id: z.string().uuid(),
+  size: z.enum(["1K", "2K", "4K"]),
+});
+
+/** Sube un borrador a Pro partiendo de su imagen (misma composición) y suma el flyer nuevo al chat. */
+export async function upgradeAction(formData: FormData): Promise<ActionResult> {
+  await requireUser();
+  const parsed = upgradeSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: "No se pudo subir ese flyer a Pro." };
+  const { chat_id, flyer_id, size } = parsed.data;
+  if (!(await getChat(chat_id))) return { error: "Ese chat ya no existe." };
+
+  try {
+    const result = await upgradeFlyer({ flyerId: flyer_id, size });
+    if (result.error) {
+      await addMessage(chat_id, "assistant", { type: "error", text: result.error });
+    } else {
+      await addMessage(chat_id, "assistant", { type: "result", flyerIds: [result.flyerId], tier: "final", size, errors: [] });
     }
   } catch (e) {
     await addMessage(chat_id, "assistant", { type: "error", text: failure(e) });

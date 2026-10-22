@@ -107,4 +107,6 @@ export type ChatFlyer = {
   name: string;
   format: AspectRatio;
   costUsd: number;
+  /** Con qué modelo se generó: un borrador se puede subir a Pro. */
+  tier: ImageTier;
 };

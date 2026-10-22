@@ -1,6 +1,6 @@
 import { query } from "./db";
 import type { ChatContent, ChatFlyer, ChatMessage, ChatSummary, LibraryFlyer } from "./chat-types";
-import type { AspectRatio } from "./gemini/models";
+import { IMAGE_MODELS, type AspectRatio } from "./gemini/models";
 
 type MessageRow = { id: string; role: "user" | "assistant"; content: ChatContent; created_at: Date };
 
@@ -76,7 +76,8 @@ export async function getChatFlyers(ids: string[]): Promise<ChatFlyer[]> {
     copy: { headline?: string; name?: string };
     format: AspectRatio;
     cost_usd: string;
-  }>("select id, status, copy, format, cost_usd from app_flyers.flyers where id = any($1::uuid[])", [ids]);
+    model: string;
+  }>("select id, status, copy, format, cost_usd, model from app_flyers.flyers where id = any($1::uuid[])", [ids]);
   return rows.map((r) => ({
     id: r.id,
     status: r.status,
@@ -84,5 +85,6 @@ export async function getChatFlyers(ids: string[]): Promise<ChatFlyer[]> {
     name: r.copy.name ?? "",
     format: r.format,
     costUsd: Number(r.cost_usd),
+    tier: r.model === IMAGE_MODELS.draft.id ? "draft" : "final",
   }));
 }

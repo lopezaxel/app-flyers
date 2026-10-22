@@ -404,6 +404,72 @@ function buildEditPrompt(concept: Concept, baseCopy: Concept) {
     .join("\n\n");
 }
 
+/**
+ * Orden de "subir a Pro". Se guarda en `changes_en` del flyer nuevo: así, al regenerarlo, vuelve a subirse desde el
+ * mismo borrador (el flyer cuenta como una edición de su base).
+ */
+const UPGRADE_CHANGES =
+  "Upgrade this draft into its final, higher-quality version. Keep the same composition: the same layout, the same placement of every element (headline, subheadline, call to action, logo, main subject and objects), the same color palette and the same text. Raise the production level: richer and more dramatic lighting, cleaner highlights and reflections, more depth and contrast, crisper and more polished typography with a stronger hierarchy, higher detail and finish on illustrations, objects and renders, and a more premium, scroll-stopping look. People and secondary details may be re-rendered with different faces or ages if that improves the result, but the composition must stay recognizable.";
+
+function buildUpgradePrompt(concept: Concept) {
+  const text = [
+    `Headline: "${concept.headline}"`,
+    concept.subheadline && `Subheadline: "${concept.subheadline}"`,
+    concept.cta && `Call to action: "${concept.cta}"`,
+  ].filter(Boolean);
+  return [
+    `Edit this image. ${UPGRADE_CHANGES}`,
+    `The text in the image must read exactly as follows (keep the Spanish wording, do not translate it; fix any typo or garbled letters in the draft):\n${text.join("\n")}`,
+    "Do not add any other text, and keep the logos exactly as they appear in the draft.",
+  ].join("\n\n");
+}
+
+/**
+ * Sube un borrador a su versión final con el modelo Pro: el borrador viaja como imagen base, así que el resultado
+ * conserva su composición y solo eleva la producción (luces, tipografía, detalle). No es otra tirada desde cero.
+ */
+export async function upgradeFlyer(input: { flyerId: string; size: ImageSize }) {
+  const { flyerId, size } = input;
+  const tier: ImageTier = "final";
+  const { rows } = await query<{
+    format: AspectRatio;
+    angle_id: string | null;
+    topic: string;
+    ref_inspiration_ids: string[];
+    ref_flyer_ids: string[];
+  }>(
+    "select format, angle_id, topic, ref_inspiration_ids, ref_flyer_ids from app_flyers.flyers where id = $1 and status = 'done'",
+    [flyerId],
+  );
+  const original = rows[0];
+  if (!original) throw new Error("No encuentro ese flyer, o todavía no está terminado.");
+
+  await assertWithinBudget(estimateImagesCostUsd(tier, size, 1));
+  const base = await loadBase(flyerId);
+  if (!base) throw new Error("La imagen del borrador ya no está disponible.");
+
+  const concept: Concept = { ...base.copy, base_flyer_id: flyerId, changes_en: UPGRADE_CHANGES };
+  const prompt = buildUpgradePrompt(concept);
+  const newId = await insertFlyer({
+    seriesId: randomUUID(),
+    angleId: original.angle_id,
+    topic: original.topic,
+    concept,
+    format: original.format,
+    model: IMAGE_MODELS[tier].id,
+    size,
+    prompt,
+    inspirationIds: original.ref_inspiration_ids,
+    styleFlyerIds: original.ref_flyer_ids,
+  });
+  try {
+    await renderInto(newId, { tier, size, format: original.format, prompt, refs: [base.ref] });
+  } catch (e) {
+    return { flyerId: newId, error: explainGeminiError(e) };
+  }
+  return { flyerId: newId, error: null };
+}
+
 export type CreateVariationsInput = {
   angleId: string | null;
   topic: string;

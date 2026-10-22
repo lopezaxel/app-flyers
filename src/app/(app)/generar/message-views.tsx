@@ -375,6 +375,8 @@ export function ResultView({
   busy,
   regenerateCost,
   onRegenerate,
+  upgradeCost,
+  onUpgrade,
   onAskChanges,
 }: {
   content: ResultContent;
@@ -383,6 +385,9 @@ export function ResultView({
   /** Costo estimado de regenerar un flyer con el modelo y la resolución elegidos. */
   regenerateCost: number;
   onRegenerate: (flyerId: string) => void;
+  /** Costo estimado de subir un borrador a Pro con la resolución elegida. */
+  upgradeCost: number;
+  onUpgrade: (flyerId: string) => void;
   onAskChanges: (flyerName: string) => void;
 }) {
   const items = content.flyerIds.map((id) => flyers[id]).filter((f): f is ChatFlyer => Boolean(f));
@@ -427,6 +432,17 @@ export function ResultView({
                     className="rounded-full border border-white/15 px-2.5 py-1 text-white/80 transition hover:bg-white/10 disabled:opacity-50"
                   >
                     {f.status === "failed" ? "↻ Reintentar" : "↻ Regenerar"}
+                  </button>
+                )}
+                {f.status === "done" && f.tier === "draft" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onUpgrade(f.id)}
+                    title={`Misma composición, con más producción (luces, tipografía, detalle) · ~US$ ${upgradeCost.toFixed(2)}`}
+                    className="rounded-full border border-white/15 px-2.5 py-1 text-white/80 transition hover:bg-white/10 disabled:opacity-50"
+                  >
+                    ⬆ Subir a Pro
                   </button>
                 )}
                 {f.status === "done" && (
